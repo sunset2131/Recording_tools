@@ -1,0 +1,22 @@
+# Recording tool runtime artifacts
+/Recording_tools/output/
+/Recording_tools/.tmp/
+/Recording_tools/.playwright/
+
+# Root-level Node dependencies and package manager diagnostics
+/node_modules/
+/npm-debug.log*
+/yarn-debug.log*
+/yarn-error.log*
+/pnpm-debug.log*
+
+# Local environment files
+/.env
+/.env.*
+!/.env.example
+
+# Editor and operating system files
+/.vscode/
+/.idea/
+.DS_Store
+Thumbs.db

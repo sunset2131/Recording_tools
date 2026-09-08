@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>录制工具 - UI自动化录制</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, "Microsoft YaHei", sans-serif; background: #f0f2f5; color: #333; min-height: 100vh; }
+.header { background: linear-gradient(135deg, #1890ff, #096dd9); color: #fff; padding: 20px 32px; }
+.header h1 { font-size: 22px; font-weight: 600; }
+.header p { font-size: 13px; opacity: 0.85; margin-top: 4px; }
+.container { max-width: 960px; margin: 24px auto; padding: 0 16px; }
+.card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 24px; margin-bottom: 20px; }
+.card h2 { font-size: 16px; margin-bottom: 16px; color: #1890ff; border-left: 3px solid #1890ff; padding-left: 10px; }
+.form-row { display: flex; gap: 12px; align-items: flex-end; margin-bottom: 14px; flex-wrap: wrap; }
+.form-group { display: flex; flex-direction: column; gap: 4px; }
+.form-group label { font-size: 13px; color: #666; }
+.form-group select, .form-group input { padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 14px; outline: none; }
+.form-group select:focus, .form-group input:focus { border-color: #1890ff; box-shadow: 0 0 0 2px rgba(24,144,255,0.1); }
+.form-group select { min-width: 200px; }
+.form-group input[type="text"] { min-width: 320px; }
+.btn { padding: 8px 20px; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; transition: all 0.2s; }
+.btn-primary { background: #1890ff; color: #fff; }
+.btn-primary:hover { background: #40a9ff; }
+.btn-primary:disabled { background: #d9d9d9; cursor: not-allowed; }
+.btn-danger { background: #ff4d4f; color: #fff; }
+.btn-danger:hover { background: #ff7875; }
+.btn-success { background: #52c41a; color: #fff; }
+.btn-success:hover { background: #73d13d; }
+.btn-gray { background: #8c8c8c; color: #fff; }
+.btn-gray:hover { background: #a6a6a6; }
+.btn-sm { padding: 4px 12px; font-size: 12px; }
+.status-bar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 4px; margin-top: 12px; font-size: 13px; }
+.status-recording { background: #fff1f0; border: 1px solid #ffa39e; color: #cf1322; }
+.status-completed { background: #f6ffed; border: 1px solid #b7eb8f; color: #389e0d; }
+.status-enriching { background: #e6f7ff; border: 1px solid #91d5ff; color: #096dd9; }
+.status-running { background: #fff7e6; border: 1px solid #ffd591; color: #d46b08; }
+.status-error { background: #fff2e8; border: 1px solid #ffbb96; color: #d4380d; }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #1890ff; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.file-list { margin-top: 8px; }
+.file-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border: 1px solid #f0f0f0; border-radius: 4px; margin-bottom: 8px; }
+.file-item:hover { background: #fafafa; }
+.file-name { font-size: 13px; font-weight: 500; }
+.file-actions { display: flex; gap: 8px; }
+.hidden { display: none; }
+.toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 4px; color: #fff; font-size: 13px; z-index: 1000; animation: slideIn 0.3s ease; }
+.toast-success { background: #52c41a; }
+.toast-error { background: #ff4d4f; }
+@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🎬 录制工具 v1.0</h1>
+</div>
+
+<div class="container">
+  <!-- 录制区域 -->
+  <div class="card">
+    <h2>📹 开始录制</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label>系统网址（可选，不填则打开空白浏览器手动导航）</label>
+        <input type="text" id="urlInput" placeholder="http://10.1.2.3:8080/login" style="min-width:400px">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>流程名称</label>
+        <input type="text" id="flowName" placeholder="例如：登录、客户查询" style="min-width:200px">
+      </div>
+      <button class="btn btn-primary" id="startBtn" onclick="startRecord()">▶ 开始录制</button>
+      <button class="btn btn-danger hidden" id="stopBtn" onclick="stopRecord()">■ 完成并保存</button>
+    </div>
+    <div id="recordStatus" class="status-bar hidden"></div>
+  </div>
+
+  <!-- 操作说明 -->
+  <div class="card">
+    <h2>📖 操作说明</h2>
+    <ol style="font-size:13px;line-height:2;color:#666;padding-left:20px">
+      <li>输入网址（可选）和流程名称，点击「开始录制」；不填网址则打开空白浏览器，手动导航到目标系统</li>
+      <li>浏览器自动打开，在浏览器中像平时一样正常操作（登录、点菜单、填表单…）</li>
+      <li>点击新链接打开的新标签页也会自动录制，无需手动切换</li>
+      <li>操作完成后<strong>关闭浏览器窗口</strong>即结束录制，JSON 文件自动保存</li>
+      <li>在下方「录制结果」中点击「📁 打开文件夹」获取 JSON 文件</li>
+      <li>将 JSON 文件交给<strong>开发人员</strong>用于自动化测试</li>
+    </ol>
+
+    <div style="margin-top:16px;padding:12px 16px;background:#f6f8fa;border-radius:4px;font-size:12px;color:#666">
+      <strong>💡 录制说明：</strong><br>
+      • 每次点击/输入/选择操作，自动记录该元素的 <strong>7 种定位</strong>（id、class、css、xpath、aria、placeholder、name）和 <strong>12 种属性</strong><br>
+      • 新标签页自动监听，无需手动操作<br>
+      • 手机号、密码、验证码等敏感操作正常录制，开发人员处理时会自动脱敏<br>
+      • 如遇弹窗（滑块验证、短信验证等），直接手动操作，会正常录进脚本
+    </div>
+  </div>
+
+  <!-- 录制结果 -->
+  <div class="card">
+    <h2>📁 录制结果</h2>
+    <button class="btn btn-sm btn-primary" onclick="loadFiles()" style="margin-bottom:12px">🔄 刷新列表</button>
+    <div id="fileList" class="file-list">
+      <p style="color:#999;font-size:13px">加载中...</p>
+    </div>
+  </div>
+
+  <!-- 运行日志 -->
+  <div class="card">
+    <h2>📋 运行日志</h2>
+    <div id="logPanel" style="background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:4px;font-family:Consolas,monospace;font-size:12px;max-height:300px;overflow-y:auto;line-height:1.8"></div>
+  </div>
+</div>
+
+<script>
+const API = '';
+
+// 初始化
+async function init() {
+  loadFiles();
+  setInterval(loadLogs, 2000);
+  loadLogs();
+}
+
+// 打开文件夹（资源管理器）
+async function openInExplorer(folderPath) {
+  await fetch(API + '/api/open?path=' + encodeURIComponent(folderPath));
+}
+
+// 删除录制文件夹
+async function deleteFolder(folderPath, name) {
+  if (!confirm(`确定删除「${name}」？此操作不可恢复。`)) return;
+  try {
+    const res = await fetch(API + '/api/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folderPath }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      toast(data.error, 'error');
+    } else {
+      toast('已删除', 'success');
+      loadFiles();
+    }
+  } catch (e) {
+    toast('删除失败: ' + e.message, 'error');
+  }
+}
+
+// 加载日志
+let lastLogCount = 0;
+async function loadLogs() {
+  try {
+    const res = await fetch(API + '/api/logs');
+    const data = await res.json();
+    if (data.logs.length === lastLogCount) return;
+    lastLogCount = data.logs.length;
+    const panel = document.getElementById('logPanel');
+    panel.innerHTML = data.logs.map(log => {
+      const color = log.level === 'success' ? '#52c41a' : log.level === 'error' ? '#ff4d4f' : '#d4d4d4';
+      return `<div style="color:${color}"><span style="color:#888">[${log.time}]</span> ${log.msg}</div>`;
+    }).join('');
+    panel.scrollTop = panel.scrollHeight;
+  } catch (e) { /* ignore */ }
+}
+
+// 开始录制
+async function startRecord() {
+  const url = document.getElementById('urlInput').value.trim() || '';
+  const flowName = document.getElementById('flowName').value.trim();
+
+  document.getElementById('startBtn').classList.add('hidden');
+  document.getElementById('stopBtn').classList.remove('hidden');
+  showStatus('recording', '<span class="spinner"></span> 录制中... 浏览器已打开，请在浏览器中操作，完成后<strong>关闭浏览器窗口</strong>');
+
+  const res = await fetch(API + '/api/record/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, flowName }),
+  });
+  const data = await res.json();
+  if (data.error) {
+    toast(data.error, 'error');
+    resetButtons();
+    return;
+  }
+
+  // 轮询录制状态
+  pollRecordStatus();
+}
+
+async function pollRecordStatus() {
+  const interval = setInterval(async () => {
+    const res = await fetch(API + '/api/record/status');
+    const data = await res.json();
+    const elapsed = formatTime(data.elapsed);
+
+    if (data.status === 'recording') {
+      const message = data.stopping
+        ? `<span class="spinner"></span> 正在保存录制结果 (${elapsed})...`
+        : `<span class="spinner"></span> 录制中 (${elapsed})... 请在浏览器中操作，完成后关闭浏览器窗口`;
+      showStatus('recording', message);
+    } else if (data.status === 'completed') {
+      clearInterval(interval);
+      showStatus('completed', `✅ 录制完成 (${elapsed})`);
+      resetButtons();
+      loadFiles();
+    } else if (data.status === 'error') {
+      clearInterval(interval);
+      showStatus('error', `❌ 录制异常退出 (错误码: ${data.exitCode})，耗时 ${elapsed}`);
+      resetButtons();
+    }
+  }, 800);
+}
+
+// 停止录制
+async function stopRecord() {
+  const res = await fetch(API + '/api/record/stop', { method: 'POST' });
+  const data = await res.json();
+  if (data.error) {
+    toast(data.error, 'error');
+    return;
+  }
+  document.getElementById('stopBtn').disabled = true;
+  showStatus('recording', '<span class="spinner"></span> 正在保存录制结果...');
+}
+
+
+// 加载文件列表
+async function loadFiles() {
+  const res = await fetch(API + '/api/files');
+  const data = await res.json();
+  const container = document.getElementById('fileList');
+
+  if (data.folders.length === 0) {
+    container.innerHTML = '<p style="color:#999;font-size:13px">暂无录制文件</p>';
+    return;
+  }
+
+  container.innerHTML = data.folders.map(folder => {
+    const fileEntries = Object.entries(folder.files);
+    const jsonFile = fileEntries.find(([name]) => name.endsWith('.json') && !name.includes('登录态'));
+    return `
+      <div class="file-item">
+        <div style="flex:1">
+          <span class="file-name">📂 ${folder.name}</span>
+          ${jsonFile ? '<span style="margin-left:8px;font-size:11px;color:#52c41a">已录制</span>' : ''}
+        </div>
+        <div class="file-actions">
+          <button class="btn btn-sm btn-danger" onclick="deleteFolder('${folder.path.replace(/\\/g, '\\\\')}', '${folder.name}')">🗑 删除</button>
+          <button class="btn btn-sm btn-gray" onclick="openInExplorer('${folder.path.replace(/\\/g, '\\\\')}')">📁 打开文件夹</button>
+        </div>
+      </div>
+    `;
+  }).reverse().join('');
+}
+
+// UI 辅助
+function showStatus(type, html) {
+  const el = document.getElementById('recordStatus');
+  el.className = `status-bar status-${type}`;
+  el.innerHTML = html;
+  el.classList.remove('hidden');
+}
+
+function resetButtons() {
+  document.getElementById('startBtn').classList.remove('hidden');
+  const stopBtn = document.getElementById('stopBtn');
+  stopBtn.classList.add('hidden');
+  stopBtn.disabled = false;
+}
+
+function toast(msg, type) {
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+function formatTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m > 0 ? `${m}分${s}秒` : `${s}秒`;
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + 'B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB';
+  return (bytes / 1024 / 1024).toFixed(1) + 'MB';
+}
+
+init();
+</script>
+</body>
+</html>
