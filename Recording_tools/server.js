@@ -334,7 +334,7 @@ function runCommand(exe, args) {
 // ========== 启动 ==========
 
 server.listen(PORT, () => {
-  addLog('录制工具 v1.0 已启动', 'success');
+  addLog('Recording_tools v2.0 已启动', 'success');
   addLog('--- 环境检查 ---');
   addLog(`Node.js: ${process.version} (${process.platform} ${process.arch})`);
   addLog(`浏览器引擎: ${BROWSER_CHANNEL} ${BROWSER_CHANNEL === 'chrome' ? '(Chrome)' : '(Edge)'}`);
