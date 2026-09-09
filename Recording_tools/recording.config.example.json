@@ -1,0 +1,11 @@
+{
+  "captureResponseBodies": true,
+  "responseBodyMaxBytes": 1048576,
+  "domSnapshotMaxBytes": 5242880,
+  "trace": true,
+  "zip": true,
+  "network": {
+    "includeThirdParty": true,
+    "includeStatic": true
+  }
+}

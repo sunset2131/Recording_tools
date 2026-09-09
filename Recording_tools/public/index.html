@@ -176,12 +176,19 @@ async function startRecord() {
   document.getElementById('stopBtn').classList.remove('hidden');
   showStatus('recording', '<span class="spinner"></span> 录制中... 浏览器已打开，请在浏览器中操作，完成后<strong>关闭浏览器窗口</strong>');
 
-  const res = await fetch(API + '/api/record/start', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url, flowName }),
-  });
-  const data = await res.json();
+  let data;
+  try {
+    const res = await fetch(API + '/api/record/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, flowName }),
+    });
+    data = await res.json();
+  } catch (error) {
+    toast('无法启动录制: ' + error.message, 'error');
+    resetButtons();
+    return;
+  }
   if (data.error) {
     toast(data.error, 'error');
     resetButtons();

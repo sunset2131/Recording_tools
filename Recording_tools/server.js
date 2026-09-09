@@ -15,6 +15,7 @@ const PLAYWRIGHT_CLI = path.join(TOOL_DIR, 'npm', 'node_modules', '@playwright',
 const CONFIG_FILE = path.join(TOOL_DIR, 'config.txt');
 const OUTPUT_DIR = path.join(TOOL_DIR, 'output');
 const CUSTOM_RECORDER = path.join(TOOL_DIR, 'custom-recorder.js');
+const { loadConfig } = require('./recording-config');
 
 // 浏览器检测
 let BROWSER_CHANNEL = 'chrome';
@@ -93,7 +94,9 @@ function handleGetConfig(res) {
       }
     }
   }
-  json(res, { systems: lines, channel: BROWSER_CHANNEL });
+  let recording;
+  try { recording = loadConfig(); } catch (error) { recording = { error: error.message }; }
+  json(res, { systems: lines, channel: BROWSER_CHANNEL, recording });
 }
 
 function handleStartRecord(req, res) {
@@ -104,15 +107,20 @@ function handleStartRecord(req, res) {
   let body = '';
   req.on('data', c => body += c);
   req.on('end', () => {
-    const { url, flowName } = JSON.parse(body);
+    let requestData;
+    try { requestData = JSON.parse(body || '{}'); } catch (error) { return json(res, { error: `请求 JSON 无效: ${error.message}` }, 400); }
+    const { url, flowName } = requestData;
+    let effectiveConfig;
+    try { effectiveConfig = loadConfig(); } catch (error) { addLog(error.message, 'error'); return json(res, { error: error.message }, 400); }
 
-    const safeName = (flowName || '录制').replace(/[\\/:*?"<>|]/g, '_');
+    const safeName = (flowName || '录制').replace(/[\\/:*?"<>|]/g, '_').trim() || '录制';
     const now = new Date();
     const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-    const timeStr = `${String(now.getHours()).padStart(2,'0')}-${String(now.getMinutes()).padStart(2,'0')}`;
-    const folderName = flowName ? `${dateStr}_${safeName}` : `${dateStr}_${safeName}_${timeStr}`;
+    const timeStr = `${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}`;
+    let folderName;
+    do { folderName = `${dateStr}_${safeName}_${timeStr}_${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`; } while (fs.existsSync(path.join(OUTPUT_DIR, folderName)));
     const outFolder = path.join(OUTPUT_DIR, folderName);
-    if (!fs.existsSync(outFolder)) fs.mkdirSync(outFolder, { recursive: true });
+    fs.mkdirSync(outFolder, { recursive: true });
 
     const outFile = path.join(outFolder, safeName + '_此文件请发给开发人员.json');
 
@@ -138,6 +146,9 @@ function handleStartRecord(req, res) {
       exitCode: null,
       startTime: Date.now(),
       stopping: false,
+      forced: false,
+      config: effectiveConfig,
+      stopTimer: null,
     };
 
     addLog(`录制开始: ${safeName} | ${url || '手动导航'}`, 'info');
@@ -153,11 +164,14 @@ function handleStartRecord(req, res) {
     });
 
     proc.on('exit', (code) => {
+      if (currentRecord.stopTimer) clearTimeout(currentRecord.stopTimer);
       currentRecord.exited = true;
       currentRecord.exitCode = code;
       const jsonExists = fs.existsSync(currentRecord.outFile);
       const jsonSize = jsonExists ? fs.statSync(currentRecord.outFile).size : 0;
-      const success = jsonSize > 0;
+      let complete = false;
+      try { complete = jsonExists && JSON.parse(fs.readFileSync(currentRecord.outFile, 'utf8')).complete !== false; } catch (_) {}
+      const success = jsonSize > 0 && complete;
       addLog(`录制结束: ${safeName} | ${success ? '成功' : '失败(错误码=' + code + ')'} | 文件: ${jsonSize}字节`, success ? 'success' : 'error');
       const logFile = path.join(OUTPUT_DIR, '录制日志.txt');
       const logLine = `[${new Date().toLocaleString()}] ${safeName} | ${url || '手动导航'} | ${success ? '成功' : '失败(code=' + code + ')'}`;
@@ -192,6 +206,9 @@ function handleRecordStatus(res) {
       folder: currentRecord.outFolder,
       jsonFile: jsonExists ? currentRecord.outFile : null,
       jsonSize,
+      evidenceFile: fs.existsSync(path.join(currentRecord.outFolder, 'evidence.json')) ? path.join(currentRecord.outFolder, 'evidence.json') : null,
+      archiveFile: fs.existsSync(path.join(currentRecord.outFolder, 'evidence.zip')) ? path.join(currentRecord.outFolder, 'evidence.zip') : null,
+      forced: currentRecord.forced,
     });
   }
 
@@ -211,6 +228,13 @@ function handleStopRecord(res) {
     currentRecord.proc.send({ type: 'stop' }, (error) => {
       if (error) addLog(`保存请求发送失败: ${error.message}`, 'error');
     });
+    currentRecord.stopTimer = setTimeout(() => {
+      if (!currentRecord.exited) {
+        currentRecord.forced = true;
+        addLog(`录制保存超过 15 秒，强制结束: ${currentRecord.flowName}`, 'error');
+        currentRecord.proc.kill();
+      }
+    }, 15000);
     addLog(`正在保存录制: ${currentRecord.flowName}`, 'info');
     json(res, { message: '正在保存录制结果' });
   } else {
@@ -222,16 +246,19 @@ function handleDelete(req, res) {
   let body = '';
   req.on('data', c => body += c);
   req.on('end', () => {
-    const { folderPath } = JSON.parse(body);
+    let folderPath;
+    try { folderPath = JSON.parse(body || '{}').folderPath; } catch (error) { return json(res, { error: `请求 JSON 无效: ${error.message}` }, 400); }
     if (!folderPath || !fs.existsSync(folderPath)) {
       return json(res, { error: '文件夹不存在' }, 400);
     }
     // 安全检查：只允许删除 output 目录下的文件夹
-    if (!folderPath.startsWith(OUTPUT_DIR)) {
+    const resolvedFolder = path.resolve(folderPath);
+    const resolvedOutput = path.resolve(OUTPUT_DIR);
+    if (resolvedFolder === resolvedOutput || !resolvedFolder.startsWith(resolvedOutput + path.sep)) {
       return json(res, { error: '不允许删除此目录' }, 403);
     }
-    fs.rmSync(folderPath, { recursive: true, force: true });
-    addLog(`已删除: ${path.basename(folderPath)}`, 'info');
+    fs.rmSync(resolvedFolder, { recursive: true, force: true });
+    addLog(`已删除: ${path.basename(resolvedFolder)}`, 'info');
     json(res, { message: '已删除' });
   });
 }

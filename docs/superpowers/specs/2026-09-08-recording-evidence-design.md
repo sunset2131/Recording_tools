@@ -154,7 +154,7 @@ DOM 快照保留表单的原始 `value` 和页面可见文本，不自动脱敏�
 
 ## 9. README 要求
 
-新增 `Recording_tools/README.md`，使用中文说明：
+新增仓库根目录 `README.md`，使用中文说明：
 
 - 启动工具、打开控制页和开始/停止录制。
 - 输出目录结构以及每个文件的用途。
@@ -163,14 +163,15 @@ DOM 快照保留表单的原始 `value` 和页面可见文本，不自动脱敏�
 - `recording.config.example.json` 与仅本地使用的 `recording.config.json` 的关系、默认配置和启动前校验失败的处理方式。
 - 表单值、DOM、文本和响应体可能含敏感信息，工具不会自动脱敏、上传或删除；使用方必须控制证据目录的访问、传输、保留和清理。
 - 明确当前没有业务断言和自动脱敏。
-- 提供以下 AI 使用提示词：
+- 提供以下可独立复制给其他 AI 使用的提示词。提示词不得要求 AI 先阅读仓库 README，至少在只提供 `evidence.json` 的情况下也能执行分析：
 
 ```text
-请先阅读此录制目录中的 README.md，再读取 evidence.json。
+请先读取我提供的录制目录中的 evidence.json；如果同时提供 README.md，可以把它作为补充，但不要把 README.md 作为必要前置条件。
 以 evidence.json.steps 作为逻辑步骤主线，根据每一步的 before/after、locators、networkRequestIds 和 consoleEventIds 还原流程。
 仅在需要排查时读取 actions.json、network.jsonl、console.jsonl、pages/*.html、截图和 trace.zip。
-优先使用 score 高且 unique=true 的 role、label、testId 定位；不要直接把唯一 CSS/XPath 当作稳定定位器。
-请输出测试目的、步骤、可观察结果、断言建议、Playwright 脚本，以及无法从证据确定的业务预期。
+优先使用 score 高且 unique=true 的 role、label、text 或 testId 定位；不要直接把唯一 CSS/XPath 当作稳定定位器。
+检查 complete、warnings、errors、missingFiles；不要臆造业务断言或把录制值直接当成通用测试数据。
+请输出测试目的、前置条件和参数、步骤、可观察结果、断言建议、Playwright 脚本、网络/控制台异常，以及无法从证据确定的业务预期。
 ```
 
 ## 10. 后续升级边界

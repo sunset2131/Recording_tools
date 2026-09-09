@@ -5,6 +5,13 @@
 /Recording_tools/recording.config.json
 !/Recording_tools/recording.config.example.json
 
+# Documentation and local-only validation artifacts
+/docs/
+/Recording_tools/tests/
+
+# Local system URL list; keep private environment configuration out of Git
+/Recording_tools/config.txt
+
 # Root-level Node dependencies and package manager diagnostics
 /node_modules/
 /npm-debug.log*
