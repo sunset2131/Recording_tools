@@ -122,12 +122,10 @@ function handleStartRecord(req, res) {
     const outFolder = path.join(OUTPUT_DIR, folderName);
     fs.mkdirSync(outFolder, { recursive: true });
 
-    const outFile = path.join(outFolder, safeName + '_此文件请发给开发人员.json');
-
-    const args = [CUSTOM_RECORDER, url || '', outFile];
+    const args = [CUSTOM_RECORDER, url || '', outFolder];
 
     const proc = spawn(NODE_EXE, args, {
-      // 保留 IPC 通道，让“完成并保存”由录制器自行收尾并写出 JSON。
+      // 保留 IPC 通道，让“完成并保存”由录制器自行收尾并写出证据包。
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       env: {
         ...process.env,
@@ -141,7 +139,6 @@ function handleStartRecord(req, res) {
       url: url || '(手动导航)',
       flowName: safeName,
       outFolder,
-      outFile,
       exited: false,
       exitCode: null,
       startTime: Date.now(),
@@ -167,18 +164,19 @@ function handleStartRecord(req, res) {
       if (currentRecord.stopTimer) clearTimeout(currentRecord.stopTimer);
       currentRecord.exited = true;
       currentRecord.exitCode = code;
-      const jsonExists = fs.existsSync(currentRecord.outFile);
-      const jsonSize = jsonExists ? fs.statSync(currentRecord.outFile).size : 0;
+      const evidenceFile = path.join(currentRecord.outFolder, 'evidence.json');
+      const evidenceExists = fs.existsSync(evidenceFile);
+      const evidenceSize = evidenceExists ? fs.statSync(evidenceFile).size : 0;
       let complete = false;
-      try { complete = jsonExists && JSON.parse(fs.readFileSync(currentRecord.outFile, 'utf8')).complete !== false; } catch (_) {}
-      const success = jsonSize > 0 && complete;
-      addLog(`录制结束: ${safeName} | ${success ? '成功' : '失败(错误码=' + code + ')'} | 文件: ${jsonSize}字节`, success ? 'success' : 'error');
+      try { complete = evidenceExists && JSON.parse(fs.readFileSync(evidenceFile, 'utf8')).complete === true; } catch (_) {}
+      const success = evidenceSize > 0 && complete;
+      addLog(`录制结束: ${safeName} | ${success ? '成功' : '失败(错误码=' + code + ')'} | 文件: ${evidenceSize}字节`, success ? 'success' : 'error');
       const logFile = path.join(OUTPUT_DIR, '录制日志.txt');
       const logLine = `[${new Date().toLocaleString()}] ${safeName} | ${url || '手动导航'} | ${success ? '成功' : '失败(code=' + code + ')'}`;
       fs.appendFileSync(logFile, logLine + '\n');
     });
 
-    json(res, { message: '录制已启动', folder: folderName, outFile });
+    json(res, { message: '录制已启动', folder: folderName });
   });
 }
 
@@ -193,20 +191,22 @@ function handleRecordStatus(res) {
     currentRecord.exitCode = currentRecord.proc.exitCode;
   }
 
-  // 文件检测：只要 JSON 文件存在且有内容，视为录制完成
-  const jsonExists = fs.existsSync(currentRecord.outFile);
-  const jsonSize = jsonExists ? fs.statSync(currentRecord.outFile).size : 0;
+  // 文件检测：以 evidence.json 的完整性状态为准
+  const evidenceFile = path.join(currentRecord.outFolder, 'evidence.json');
+  const evidenceExists = fs.existsSync(evidenceFile);
+  const evidenceSize = evidenceExists ? fs.statSync(evidenceFile).size : 0;
+  let complete = false;
+  try { complete = evidenceExists && JSON.parse(fs.readFileSync(evidenceFile, 'utf8')).complete === true; } catch (_) {}
 
-  if (currentRecord.exited || jsonSize > 0) {
-    const success = jsonSize > 0;
+  if (currentRecord.exited || evidenceSize > 0) {
+    const success = evidenceSize > 0 && complete;
     return json(res, {
       status: success ? 'completed' : 'error',
       exitCode: currentRecord.exitCode,
       elapsed,
       folder: currentRecord.outFolder,
-      jsonFile: jsonExists ? currentRecord.outFile : null,
-      jsonSize,
-      evidenceFile: fs.existsSync(path.join(currentRecord.outFolder, 'evidence.json')) ? path.join(currentRecord.outFolder, 'evidence.json') : null,
+      evidenceFile: evidenceExists ? evidenceFile : null,
+      evidenceSize,
       archiveFile: fs.existsSync(path.join(currentRecord.outFolder, 'evidence.zip')) ? path.join(currentRecord.outFolder, 'evidence.zip') : null,
       forced: currentRecord.forced,
     });

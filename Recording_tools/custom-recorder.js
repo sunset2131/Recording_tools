@@ -1,6 +1,6 @@
 'use strict';
 
-/* Evidence-first Playwright recorder. The compatibility JSON is written last. */
+/* Evidence-first Playwright recorder. */
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -88,10 +88,9 @@ function kindFor(request) {
 }
 
 class RecordingSession {
-  constructor(targetUrl, outputFile) {
+  constructor(targetUrl, outputDir) {
     this.targetUrl = targetUrl || '';
-    this.outputFile = outputFile;
-    this.outDir = path.dirname(outputFile);
+    this.outDir = outputDir;
     this.pagesDir = path.join(this.outDir, 'pages');
     this.responsesDir = path.join(this.outDir, 'responses');
     this.downloadsDir = path.join(this.outDir, 'downloads');
@@ -301,7 +300,6 @@ class RecordingSession {
     for (const file of referenced) if (file !== 'evidence.json' && !fs.existsSync(path.join(this.outDir, file))) evidence.missingFiles.push(file);
     if (evidence.missingFiles.length) evidence.complete = false;
     atomicWrite(path.join(this.outDir, 'evidence.json'), JSON.stringify(evidence, null, 2));
-    atomicWrite(this.outputFile, JSON.stringify({ complete: evidence.complete, metadata: { ...evidence.metadata, actionCount: this.actions.length }, actions: this.actions }, null, 2));
     if (this.config.zip) this.createZip().catch(error => { this.warnings.push({ scope: 'zip', message: error.message }); try { atomicWrite(path.join(this.outDir, 'evidence.json'), JSON.stringify({ ...evidence, warnings: this.warnings }, null, 2)); } catch (_) {} });
   }
   createZip() {
@@ -322,10 +320,10 @@ class RecordingSession {
 }
 
 async function main() {
-  const targetUrl = process.argv[2] || ''; const outputFile = process.argv[3] || path.join(TOOL_DIR, 'output', `recording_${Date.now()}.json`);
+  const targetUrl = process.argv[2] || ''; const outputDir = process.argv[3] || path.join(TOOL_DIR, 'output', `recording_${Date.now()}`);
   let session;
   try {
-    session = new RecordingSession(targetUrl, outputFile); await session.init();
+    session = new RecordingSession(targetUrl, outputDir); await session.init();
     console.log('录制已启动，请在浏览器中操作；通过控制台的“完成并保存”结束。');
     const finish = reason => session.stop(reason).then(() => { if (process.connected) process.disconnect(); }).catch(error => { session.errors.push({ scope: 'finalize', message: error.message }); session.finalize(true).finally(() => process.exitCode = 1); });
     process.on('message', message => { if (message && message.type === 'stop') finish('收到保存请求'); });

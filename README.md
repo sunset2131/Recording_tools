@@ -34,8 +34,7 @@
 每个录制目录以 `evidence.json` 为主入口，常见文件如下：
 
 - `evidence.json`：证据包索引，包含录制元数据、`steps`、每步的 `before`/`after` 状态、定位候选、网络/控制台关联 ID、警告、错误和完整性状态。
-- `actions.json`：全部原始操作事件，保留旧版 `metadata` 与 `actions` 字段，供旧消费者兼容使用。
-- `<流程名>_此文件请发给开发人员.json`：兼容旧消费者的动作 JSON 文件。
+- `actions.json`：全部原始操作事件，供审计、排查和还原逻辑步骤使用。
 - `network.jsonl`：每行一个 Page/Frame 网络请求事件，包含 URL、资源类型、状态码、耗时、失败原因、Content-Type、关联步骤和页面 ID。认证 Cookie、Authorization、Proxy-Authorization、Set-Cookie 等敏感请求头不会写入。
 - `console.jsonl`：控制台消息、页面异常、发生时间和页面 ID。
 - `pages/state-xxxx.png`：操作前后 viewport 截图。
