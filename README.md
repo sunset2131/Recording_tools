@@ -27,7 +27,7 @@
 
    `Recording_tools/output/<YYYY-MM-DD>_<流程名>_<HHmmss>_<4位ID>/`
 
-录制前会读取 `Recording_tools/recording.config.json`。仓库只提供 `Recording_tools/recording.config.example.json`，需要时复制为 `recording.config.json` 后再修改。配置文件无效、包含未知字段或数值越界时，录制会在启动前拒绝并返回字段级错误；录制过程中不会重新读取配置。
+录制前会读取两个本地配置文件：系统网址列表 `Recording_tools/config.txt` 和录制参数 `Recording_tools/recording.config.json`。仓库提供 `Recording_tools/config.example.txt` 与 `Recording_tools/recording.config.example.json` 作为模板；需要时复制为对应的运行时文件后再修改。两个运行时配置文件都不会被 Git 追踪。录制参数配置无效、包含未知字段或数值越界时，录制会在启动前拒绝并返回字段级错误；录制过程中不会重新读取配置。
 
 ## 输出文件
 

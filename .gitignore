@@ -7,6 +7,7 @@
 
 # Documentation and local-only validation artifacts
 /docs/
+/CONTEXT.md
 /Recording_tools/tests/
 
 # Local system URL list; keep private environment configuration out of Git
