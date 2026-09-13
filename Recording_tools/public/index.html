@@ -479,6 +479,54 @@ body {
 .toast-success { background: #059669; }
 .toast-error { background: #dc2626; }
 
+.capture-policy {
+  margin-top: 6px;
+  padding: 16px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.capture-policy-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.capture-policy-title { font-size: 14px; font-weight: 650; color: var(--text-main); }
+.capture-policy-note { color: var(--text-muted); font-size: 12px; }
+.mode-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.mode-option { position: relative; min-width: 0; }
+.mode-option input { position: absolute; opacity: 0; pointer-events: none; }
+.mode-option label {
+  display: flex; flex-direction: column; gap: 3px; height: 100%; padding: 10px;
+  border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; cursor: pointer;
+}
+.mode-option label:hover, .mode-option input:focus-visible + label { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
+.mode-option input:checked + label { border-color: var(--primary); background: var(--primary-light); }
+.mode-name { font-size: 13px; font-weight: 650; }
+.mode-size { color: var(--text-secondary); font-size: 11px; }
+.mode-description { color: var(--text-secondary); font-size: 11px; line-height: 1.4; }
+.policy-summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.policy-summary { padding: 10px; border-radius: 6px; background: #fff; border: 1px solid #e2e8f0; }
+.policy-summary h4 { margin-bottom: 5px; font-size: 12px; color: var(--text-secondary); }
+.policy-summary ul { margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 12px; }
+.advanced-policy { margin-top: 12px; border-top: 1px solid #dbeafe; padding-top: 10px; }
+.advanced-policy summary { cursor: pointer; color: var(--primary); font-size: 12px; font-weight: 600; }
+.advanced-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; margin-top: 10px; }
+.check-item { display: flex; align-items: flex-start; gap: 8px; color: var(--text-secondary); font-size: 12px; }
+.check-item input { margin-top: 2px; accent-color: var(--primary); }
+.check-item label { cursor: pointer; }
+.policy-hint { min-height: 18px; margin-top: 8px; color: var(--danger); font-size: 12px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+@media (max-width: 700px) {
+  .mode-grid, .advanced-grid, .policy-summary-grid { grid-template-columns: 1fr; }
+  .capture-policy-header { align-items: flex-start; flex-direction: column; gap: 3px; }
+}
+
 @keyframes slideInRight {
   from { transform: translateX(110%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
@@ -524,21 +572,39 @@ body {
         </div>
       </div>
 
-      <div class="form-action-row">
-        <div class="form-group" style="flex: 1;">
-          <label for="flowName">流程名称</label>
-          <input type="text" id="flowName" class="form-control" placeholder="例如：登录、客户查询">
-        </div>
-        <div>
-          <button class="btn btn-primary" id="startBtn" onclick="startRecord()">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-            开始录制
-          </button>
-          <button class="btn btn-danger hidden" id="stopBtn" onclick="stopRecord()">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"></rect></svg>
-            完成并保存
-          </button>
-        </div>
+    </div>
+
+    <div class="capture-policy" id="capturePolicyPanel">
+      <div class="capture-policy-header">
+        <div class="capture-policy-title">录制前选择采集项</div>
+        <div class="capture-policy-note">开始后将锁定，精简模式仍保留截图</div>
+      </div>
+      <div id="modeOptions" class="mode-grid"></div>
+      <div class="policy-summary-grid">
+        <div class="policy-summary"><h4>会产出</h4><ul id="policyEnabledList"></ul></div>
+        <div class="policy-summary"><h4>不会产出</h4><ul id="policyDisabledList"></ul></div>
+      </div>
+      <details class="advanced-policy">
+        <summary>高级采集项</summary>
+        <div id="advancedPolicyOptions" class="advanced-grid"></div>
+        <div id="policyHint" class="policy-hint" aria-live="polite"></div>
+      </details>
+    </div>
+
+    <div class="form-action-row">
+      <div class="form-group" style="flex: 1;">
+        <label for="flowName">流程名称</label>
+        <input type="text" id="flowName" class="form-control" placeholder="例如：登录、客户查询">
+      </div>
+      <div>
+        <button class="btn btn-primary" id="startBtn" onclick="startRecord()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          开始录制
+        </button>
+        <button class="btn btn-danger hidden" id="stopBtn" onclick="stopRecord()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"></rect></svg>
+          完成并保存
+        </button>
       </div>
     </div>
 
@@ -611,6 +677,8 @@ body {
 
 <script>
 const API = '';
+let capturePolicyCatalog = null;
+let capturePolicyState = null;
 
 // 初始化应用
 async function init() {
@@ -640,9 +708,78 @@ async function loadConfig() {
         select.appendChild(opt);
       });
     }
+    if (data.capturePolicy) initCapturePolicy(data.capturePolicy);
   } catch (e) {
     // 忽略异常
   }
+}
+
+function clonePolicy(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function initCapturePolicy(catalog) {
+  capturePolicyCatalog = catalog;
+  capturePolicyState = clonePolicy(catalog.presets[catalog.defaultMode || 'standard']);
+  renderCapturePolicy();
+}
+
+function policyLabel(key) {
+  const item = (capturePolicyCatalog.advancedItems || []).find(candidate => candidate.key === key);
+  return item ? item.label : key;
+}
+
+function renderCapturePolicy() {
+  if (!capturePolicyCatalog || !capturePolicyState) return;
+  const modeOptions = document.getElementById('modeOptions');
+  modeOptions.innerHTML = Object.entries(capturePolicyCatalog.modes).map(([mode, definition]) => `
+    <div class="mode-option">
+      <input type="radio" id="capture-mode-${mode}" name="captureMode" value="${mode}" ${capturePolicyState.mode === mode ? 'checked' : ''} onchange="onPolicyModeChange(this.value)">
+      <label for="capture-mode-${mode}">
+        <span class="mode-name">${escapeHtml(definition.label)}</span>
+        <span class="mode-size">体积：${escapeHtml(definition.size)}</span>
+        <span class="mode-description">${escapeHtml(definition.description)}</span>
+      </label>
+    </div>
+  `).join('');
+
+  const enabled = ['evidence.json', 'actions.json', '步骤和定位信息']
+    .concat((capturePolicyCatalog.advancedItems || []).filter(item => capturePolicyState[item.key]).map(item => item.label));
+  const disabled = (capturePolicyCatalog.advancedItems || []).filter(item => !capturePolicyState[item.key]).map(item => item.label);
+  document.getElementById('policyEnabledList').innerHTML = enabled.map(item => `<li>${escapeHtml(item)}</li>`).join('');
+  document.getElementById('policyDisabledList').innerHTML = disabled.length ? disabled.map(item => `<li>${escapeHtml(item)}</li>`).join('') : '<li>无</li>';
+
+  document.getElementById('advancedPolicyOptions').innerHTML = (capturePolicyCatalog.advancedItems || []).map(item => `
+    <div class="check-item">
+      <input type="checkbox" id="capture-${item.key}" ${capturePolicyState[item.key] ? 'checked' : ''} onchange="onPolicyItemChange('${item.key}', this.checked)" aria-describedby="capture-help-${item.key}">
+      <label for="capture-${item.key}" title="${escapeHtml(item.description)}">${escapeHtml(item.label)}<span id="capture-help-${item.key}" class="sr-only">${escapeHtml(item.description)}</span></label>
+    </div>
+  `).join('');
+
+  const hint = document.getElementById('policyHint');
+  hint.textContent = capturePolicyState.responseBodies && !capturePolicyState.networkMetadata
+    ? '响应体依赖网络元数据，请同时勾选网络元数据。'
+    : '';
+}
+
+function onPolicyModeChange(mode) {
+  if (!capturePolicyCatalog) return;
+  if (mode === 'custom') capturePolicyState = { ...clonePolicy(capturePolicyCatalog.presets.standard), mode: 'custom' };
+  else if (capturePolicyCatalog.presets[mode]) capturePolicyState = clonePolicy(capturePolicyCatalog.presets[mode]);
+  else return;
+  renderCapturePolicy();
+}
+
+function onPolicyItemChange(key, checked) {
+  if (!capturePolicyState) return;
+  capturePolicyState.mode = 'custom';
+  capturePolicyState[key] = checked;
+  renderCapturePolicy();
+}
+
+function setPolicyControlsDisabled(disabled) {
+  document.querySelectorAll('#capturePolicyPanel input, #capturePolicyPanel summary').forEach(el => { el.disabled = disabled; });
+  document.getElementById('capturePolicyPanel').style.opacity = disabled ? '0.7' : '1';
 }
 
 function onSelectSystem(url) {
@@ -703,9 +840,18 @@ async function loadLogs() {
 async function startRecord() {
   const url = document.getElementById('urlInput').value.trim() || '';
   const flowName = document.getElementById('flowName').value.trim();
+  if (!capturePolicyState) {
+    toast('采集策略尚未加载，请刷新页面后重试', 'error');
+    return;
+  }
+  if (capturePolicyState.responseBodies && !capturePolicyState.networkMetadata) {
+    toast('响应体依赖网络元数据，请同时勾选网络元数据', 'error');
+    return;
+  }
 
   document.getElementById('startBtn').classList.add('hidden');
   document.getElementById('stopBtn').classList.remove('hidden');
+  setPolicyControlsDisabled(true);
   showStatus('recording', '<span class="pulse-indicator"></span> 录制中... 浏览器已打开，请在浏览器中操作，完成后<strong>关闭浏览器窗口</strong>');
 
   let data;
@@ -713,7 +859,7 @@ async function startRecord() {
     const res = await fetch(API + '/api/record/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, flowName }),
+      body: JSON.stringify({ url, flowName, capturePolicy: clonePolicy(capturePolicyState) }),
     });
     data = await res.json();
   } catch (error) {
@@ -829,6 +975,7 @@ function resetButtons() {
   const stopBtn = document.getElementById('stopBtn');
   stopBtn.classList.add('hidden');
   stopBtn.disabled = false;
+  setPolicyControlsDisabled(false);
 }
 
 function toast(msg, type = 'success') {

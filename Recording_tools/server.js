@@ -16,6 +16,7 @@ const CONFIG_FILE = path.join(TOOL_DIR, 'config.txt');
 const OUTPUT_DIR = path.join(TOOL_DIR, 'output');
 const CUSTOM_RECORDER = path.join(TOOL_DIR, 'custom-recorder.js');
 const { loadConfig } = require('./recording-config');
+const { resolveCapturePolicy, getModeDefinitions } = require('./capture-policy');
 
 // 浏览器检测
 let BROWSER_CHANNEL = 'chrome';
@@ -96,7 +97,7 @@ function handleGetConfig(res) {
   }
   let recording;
   try { recording = loadConfig(); } catch (error) { recording = { error: error.message }; }
-  json(res, { systems: lines, channel: BROWSER_CHANNEL, recording });
+  json(res, { systems: lines, channel: BROWSER_CHANNEL, recording, capturePolicy: getModeDefinitions() });
 }
 
 function handleStartRecord(req, res) {
@@ -112,6 +113,10 @@ function handleStartRecord(req, res) {
     const { url, flowName } = requestData;
     let effectiveConfig;
     try { effectiveConfig = loadConfig(); } catch (error) { addLog(error.message, 'error'); return json(res, { error: error.message }, 400); }
+    let policyResult;
+    try { policyResult = resolveCapturePolicy(requestData.capturePolicy, effectiveConfig); }
+    catch (error) { addLog(error.message, 'error'); return json(res, { error: error.message }, 400); }
+    const effectivePolicy = policyResult.policy;
 
     const safeName = (flowName || '录制').replace(/[\\/:*?"<>|]/g, '_').trim() || '录制';
     const now = new Date();
@@ -131,6 +136,7 @@ function handleStartRecord(req, res) {
         ...process.env,
         PLAYWRIGHT_BROWSERS_PATH: path.join(TOOL_DIR, 'ms-playwright'),
         RECORDER_BROWSER_CHANNEL: BROWSER_CHANNEL,
+        RECORDER_CAPTURE_POLICY: JSON.stringify(effectivePolicy),
       },
     });
 
@@ -145,10 +151,12 @@ function handleStartRecord(req, res) {
       stopping: false,
       forced: false,
       config: effectiveConfig,
+      capturePolicy: effectivePolicy,
       stopTimer: null,
     };
 
-    addLog(`录制开始: ${safeName} | ${url || '手动导航'}`, 'info');
+    addLog(`录制开始: ${safeName} | ${url || '手动导航'} | 模式=${effectivePolicy.mode}`, 'info');
+    for (const warning of policyResult.warnings) addLog(warning.message, 'info');
 
     proc.stdout.on('data', d => {
       const lines = d.toString().split('\n').filter(l => l.trim());
@@ -208,6 +216,7 @@ function handleRecordStatus(res) {
       evidenceFile: evidenceExists ? evidenceFile : null,
       evidenceSize,
       archiveFile: fs.existsSync(path.join(currentRecord.outFolder, 'evidence.zip')) ? path.join(currentRecord.outFolder, 'evidence.zip') : null,
+      capturePolicy: currentRecord.capturePolicy,
       forced: currentRecord.forced,
     });
   }

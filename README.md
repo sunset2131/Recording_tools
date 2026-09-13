@@ -27,6 +27,17 @@
 
    `Recording_tools/output/<YYYY-MM-DD>_<流程名>_<HHmmss>_<4位ID>/`
 
+开始录制前需要选择采集模式，默认是“标准”：
+
+| 模式 | 会产出 | 不会产出 |
+| --- | --- | --- |
+| 精简 | `evidence.json`、`actions.json`、截图、错误级控制台信息、可选 ZIP | DOM、网络元数据、响应体、Trace、下载文件、第三方/静态请求 |
+| 标准 | 精简内容，加 DOM、网络元数据、错误级控制台信息、可选 ZIP | 响应体、Trace、下载文件、第三方/静态请求 |
+| 完整 | 全部采集项：截图、DOM、网络、响应体、控制台、Trace、下载、第三方/静态请求、ZIP | 无主动关闭的采集类别（仍受大小上限和敏感头过滤约束） |
+| 自定义 | 由“高级采集项”勾选的内容 | 当前未勾选的采集项 |
+
+精简模式仍然保留截图；本工具已移除“仅参数文本模式”，不会生成 `parameters.txt`。动作和参数始终在 `actions.json` 与 `evidence.json` 中保存。高级选项支持悬停和键盘聚焦说明，开始录制后不能再修改本次策略。
+
 录制前会读取两个本地配置文件：系统网址列表 `Recording_tools/config.txt` 和录制参数 `Recording_tools/recording.config.json`。仓库提供 `Recording_tools/config.example.txt` 与 `Recording_tools/recording.config.example.json` 作为模板；需要时复制为对应的运行时文件后再修改。两个运行时配置文件都不会被 Git 追踪。录制参数配置无效、包含未知字段或数值越界时，录制会在启动前拒绝并返回字段级错误；录制过程中不会重新读取配置。
 
 ## 输出文件
@@ -35,14 +46,16 @@
 
 - `evidence.json`：证据包索引，包含录制元数据、`steps`、每步的 `before`/`after` 状态、定位候选、网络/控制台关联 ID、警告、错误和完整性状态。
 - `actions.json`：全部原始操作事件，供审计、排查和还原逻辑步骤使用。
-- `network.jsonl`：每行一个 Page/Frame 网络请求事件，包含 URL、资源类型、状态码、耗时、失败原因、Content-Type、关联步骤和页面 ID。认证 Cookie、Authorization、Proxy-Authorization、Set-Cookie 等敏感请求头不会写入。
-- `console.jsonl`：控制台消息、页面异常、发生时间和页面 ID。
-- `pages/state-xxxx.png`：操作前后 viewport 截图。
-- `pages/state-xxxx.html`：对应 DOM。表单原始值和可见文本会保留；超过限制时保存截断前缀并标记 `truncated`。
-- `responses/`：仅在配置允许、响应类型为文本/JSON/HTML 且未超过大小上限时保存响应体。
-- `downloads/`：录制期间下载的文件。
-- `trace.zip`：Playwright Trace（默认开启）。
-- `evidence.zip`：录制完成后异步生成的完整证据目录压缩包；压缩失败不会改变已写入的证据目录。
+- `network.jsonl`：启用网络元数据时生成；每行一个 Page/Frame 网络请求事件，包含 URL、资源类型、状态码、耗时、失败原因、Content-Type、关联步骤和页面 ID。认证 Cookie、Authorization、Proxy-Authorization、Set-Cookie 等敏感请求头不会写入。
+- `console.jsonl`：启用控制台错误/页面异常时生成，只保存 warning、error、未捕获异常和 page error。
+- `pages/state-xxxx.png`：启用截图时生成的操作前后 viewport 截图。
+- `pages/state-xxxx.html`：启用 DOM 时生成的对应快照。表单原始值和可见文本会保留；超过限制时保存截断前缀并标记 `truncated`。
+- `responses/`：启用响应体且满足配置的 Content-Type 和大小上限时生成。
+- `downloads/`：启用下载文件时生成。
+- `trace.zip`：启用 Trace 时生成的 Playwright Trace，可用 Trace Viewer 打开；它不是 Wireshark 抓包文件。
+- `evidence.zip`：启用 ZIP 归档时异步生成的完整证据目录压缩包；压缩失败不会改变已写入的证据目录。
+
+`evidence.json` 的 `capturePolicy` 是本次实际生效策略，`captureSummary.disabled` 中的 `disabled_by_policy` 表示主动关闭，不属于文件缺失。未启用的文件在 `files` 中为 `null`；真正的采集或写入失败才会进入 `warnings`/`missingFiles`。
 
 ## 查看证据
 

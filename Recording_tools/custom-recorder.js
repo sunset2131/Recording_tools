@@ -6,6 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 const { loadConfig } = require('./recording-config');
+const { resolveCapturePolicy, createCaptureSummary } = require('./capture-policy');
 
 const TOOL_DIR = __dirname;
 const PLAYWRIGHT_PATH = path.join(TOOL_DIR, 'npm', 'node_modules', '@playwright', 'cli', 'node_modules', 'playwright');
@@ -91,9 +92,6 @@ class RecordingSession {
   constructor(targetUrl, outputDir) {
     this.targetUrl = targetUrl || '';
     this.outDir = outputDir;
-    this.pagesDir = path.join(this.outDir, 'pages');
-    this.responsesDir = path.join(this.outDir, 'responses');
-    this.downloadsDir = path.join(this.outDir, 'downloads');
     this.startDate = new Date();
     this.clock = process.hrtime.bigint();
     this.config = loadConfig();
@@ -104,6 +102,17 @@ class RecordingSession {
     this.consoleEvents = [];
     this.warnings = [];
     this.errors = [];
+    let requestedPolicy;
+    if (process.env.RECORDER_CAPTURE_POLICY) {
+      try { requestedPolicy = JSON.parse(process.env.RECORDER_CAPTURE_POLICY); }
+      catch (error) { throw new Error(`RECORDER_CAPTURE_POLICY JSON 格式错误: ${error.message}`); }
+    }
+    const policyResult = resolveCapturePolicy(requestedPolicy, this.config);
+    this.capturePolicy = policyResult.policy;
+    this.warnings.push(...policyResult.warnings);
+    if (!process.env.RECORDER_CAPTURE_POLICY) {
+      this.warnings.push({ scope: 'capture_policy', message: '未提供采集策略，已兼容使用标准模式', code: 'default_standard_policy' });
+    }
     this.pages = new Map();
     this.frames = new Map();
     this.requests = new Map();
@@ -116,12 +125,16 @@ class RecordingSession {
     this.tracePath = path.join(this.outDir, 'trace.zip');
     this.traceStopped = false;
     fs.mkdirSync(this.outDir, { recursive: true });
-    fs.mkdirSync(this.pagesDir, { recursive: true });
-    fs.mkdirSync(this.responsesDir, { recursive: true });
-    fs.mkdirSync(this.downloadsDir, { recursive: true });
-    this.networkFile = path.join(this.outDir, 'network.jsonl');
-    this.consoleFile = path.join(this.outDir, 'console.jsonl');
-    fs.writeFileSync(this.networkFile, ''); fs.writeFileSync(this.consoleFile, '');
+    this.pagesDir = path.join(this.outDir, 'pages');
+    this.responsesDir = path.join(this.outDir, 'responses');
+    this.downloadsDir = path.join(this.outDir, 'downloads');
+    if (this.capturePolicy.screenshots || this.capturePolicy.dom) fs.mkdirSync(this.pagesDir, { recursive: true });
+    if (this.capturePolicy.responseBodies) fs.mkdirSync(this.responsesDir, { recursive: true });
+    if (this.capturePolicy.downloads) fs.mkdirSync(this.downloadsDir, { recursive: true });
+    this.networkFile = this.capturePolicy.networkMetadata ? path.join(this.outDir, 'network.jsonl') : null;
+    this.consoleFile = this.capturePolicy.consoleErrors ? path.join(this.outDir, 'console.jsonl') : null;
+    if (this.networkFile) fs.writeFileSync(this.networkFile, '');
+    if (this.consoleFile) fs.writeFileSync(this.consoleFile, '');
   }
   id(type) { const n = this.next[type]++; return `${type}-${String(n).padStart(4, '0')}`; }
   clockNow() { return nowClock(this.clock); }
@@ -136,7 +149,7 @@ class RecordingSession {
     const playwright = require(PLAYWRIGHT_PATH);
     this.browser = await playwright.chromium.launch({ channel: BROWSER_CHANNEL, headless: false, args: ['--start-maximized'] });
     this.context = await this.browser.newContext({ viewport: null, acceptDownloads: true });
-    if (this.config.trace) await this.context.tracing.start({ screenshots: true, snapshots: true, sources: true });
+    if (this.capturePolicy.trace) await this.context.tracing.start({ screenshots: true, snapshots: true, sources: true });
     await this.context.exposeFunction('__recordAction', data => { this.queue = this.queue.then(() => this.handleAction(data)).catch(error => this.warn('action', error)); });
     await this.context.addInitScript({ content: INJECT_SCRIPT });
     this.context.on('page', page => this.attachPage(page));
@@ -160,11 +173,14 @@ class RecordingSession {
     if (this.pages.size > 1) page.once('domcontentloaded', () => this.captureState(page, page.mainFrame(), null, 'page_open').catch(error => this.warn('page_open_state', error)));
   }
   onConsole(page, message, error) {
+    if (!this.capturePolicy.consoleErrors) return;
+    if (!error && message && !['warning', 'error'].includes(message.type())) return;
     const clock = this.clockNow();
     const event = { consoleId: this.id('console'), ...clock, pageId: this.pageId(page), type: error ? 'pageerror' : message.type(), text: error ? error.message : message.text(), args: error ? [] : message.args().map(arg => arg.toString()).slice(0, 20) };
-    this.consoleEvents.push(event); appendJsonl(this.consoleFile, event);
+    this.consoleEvents.push(event); if (this.consoleFile) appendJsonl(this.consoleFile, event);
   }
   onDownload(page, download) {
+    if (!this.capturePolicy.downloads) return;
     const downloadId = this.id('download');
     const fileName = `${downloadId}_${safeFileName(download.suggestedFilename())}`;
     const target = path.join(this.downloadsDir, fileName);
@@ -172,12 +188,13 @@ class RecordingSession {
     this.actions.push({ actionId: this.id('action'), action: 'download', downloadId, file: `downloads/${fileName}`, pageId: this.pageId(page), ...this.clockNow() });
   }
   onRequest(request) {
+    if (!this.capturePolicy.networkMetadata) return;
     const clock = this.clockNow();
     const requestId = this.id('request');
     let frame = null; try { frame = request.frame(); } catch (_) {}
     const record = { requestId, ...clock, url: request.url(), method: request.method(), resourceType: request.resourceType(), kind: kindFor(request), pageId: frame ? this.pageId(frame.page()) : null, frameId: frame ? this.frameId(frame) : null, headers: {}, postData: request.postData() || null, status: null, failed: false, failure: null, responseBody: null, stepIds: [] };
-    if (!this.config.network.includeStatic && record.kind === 'static') return;
-    if (!this.config.network.includeThirdParty && this.targetUrl) {
+    if (!this.capturePolicy.includeStatic && record.kind === 'static') return;
+    if (!this.capturePolicy.includeThirdParty && this.targetUrl) {
       try { if (new URL(record.url).origin !== new URL(this.targetUrl).origin) return; } catch (_) {}
     }
     Object.defineProperty(record, '_written', { value: false, writable: true, enumerable: false });
@@ -192,7 +209,7 @@ class RecordingSession {
     record.status = response.status(); record.responseHeaders = headerObject(await response.allHeaders().catch(() => ({})));
     const contentType = record.responseHeaders['content-type'] || '';
     const length = Number(record.responseHeaders['content-length'] || 0);
-    if (this.config.captureResponseBodies && TEXT_TYPES.test(contentType) && (!length || length <= this.config.responseBodyMaxBytes)) {
+    if (this.capturePolicy.responseBodies && this.config.captureResponseBodies && TEXT_TYPES.test(contentType) && (!length || length <= this.config.responseBodyMaxBytes)) {
       try {
         const body = await response.body();
         if (body.length <= this.config.responseBodyMaxBytes) {
@@ -202,12 +219,12 @@ class RecordingSession {
           record.responseBody = { file, bytes: body.length, contentType };
         } else record.responseBodySkipped = { reason: 'size_limit', bytes: body.length, limit: this.config.responseBodyMaxBytes };
       } catch (error) { record.responseBodySkipped = { reason: 'read_failed', error: error.message }; }
-    } else record.responseBodySkipped = { reason: !this.config.captureResponseBodies ? 'disabled' : 'content_type_or_size' };
-    if (!record._written) { appendJsonl(this.networkFile, record); record._written = true; }
+    } else record.responseBodySkipped = { reason: !this.capturePolicy.responseBodies || !this.config.captureResponseBodies ? 'disabled' : 'content_type_or_size' };
+    if (!record._written && this.networkFile) { appendJsonl(this.networkFile, record); record._written = true; }
   }
   onRequestFailed(request) {
     const record = this.requests.get(request); if (!record) return;
-    record.endElapsedMs = this.clockNow().elapsedMs; record.failed = true; record.failure = request.failure(); if (!record._written) { appendJsonl(this.networkFile, record); record._written = true; }
+    record.endElapsedMs = this.clockNow().elapsedMs; record.failed = true; record.failure = request.failure(); if (!record._written && this.networkFile) { appendJsonl(this.networkFile, record); record._written = true; }
   }
   warn(scope, error) { this.warnings.push({ scope, message: error && error.message ? error.message : String(error), ...this.clockNow() }); }
   async settle(page) {
@@ -261,17 +278,17 @@ class RecordingSession {
     const stateId = this.id('state'); const clock = this.clockNow();
     let sameOrigin = true;
     try { sameOrigin = new URL(frame.url() || page.url()).origin === new URL(page.url()).origin; } catch (_) {}
-    const base = { stateId, phase, ...clock, pageId: this.pageId(page), frameId: this.frameId(frame), url: page.url(), frameUrl: frame.url(), sameOrigin, title: await page.title().catch(() => ''), viewport: null, screenshot: null, dom: null, settle: null };
+    const base = { stateId, phase, ...clock, pageId: this.pageId(page), frameId: this.frameId(frame), url: page.url(), frameUrl: frame.url(), sameOrigin, title: await page.title().catch(() => ''), viewport: null, screenshot: this.capturePolicy.screenshots ? null : { file: null, unavailable: true, reason: 'disabled_by_policy' }, dom: this.capturePolicy.dom ? null : { file: null, unavailable: true, reason: 'disabled_by_policy' }, settle: null };
     try { base.viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, deviceScaleFactor: devicePixelRatio })); } catch (_) {}
     const stem = `pages/${stateId}`;
     if (!sameOrigin) {
-      base.dom = { file: null, unavailable: true, reason: 'cross_origin_frame_boundary' };
+      if (this.capturePolicy.dom) base.dom = { file: null, unavailable: true, reason: 'cross_origin_frame_boundary' };
       this.states.push(base); return base;
     }
-    try {
+    if (this.capturePolicy.screenshots) try {
       const png = path.join(this.pagesDir, `${stateId}.png`); await page.screenshot({ path: png, fullPage: false }); base.screenshot = `${stem}.png`;
-    } catch (error) { this.warn('screenshot', error); }
-    try {
+    } catch (error) { base.screenshot = { file: null, unavailable: true, reason: error.message }; this.warn('screenshot', error); }
+    if (this.capturePolicy.dom) try {
       const result = await frame.evaluate(() => ({ html: document.documentElement ? document.documentElement.outerHTML : '', visibleText: document.body ? (document.body.innerText || '').slice(0, 10000) : '', viewport: { width: innerWidth, height: innerHeight } }));
       const originalSizeBytes = Buffer.byteLength(result.html, 'utf8'); const limit = this.config.domSnapshotMaxBytes;
       let html = result.html; const dom = { file: `${stem}.html`, originalSizeBytes, truncated: originalSizeBytes > limit, visibleTextSummary: result.visibleText };
@@ -289,18 +306,31 @@ class RecordingSession {
   }
   async finalize(forceError) {
     await this.queue.catch(error => this.warn('action_queue', error));
-    for (const record of this.network) if (!record._written) { appendJsonl(this.networkFile, record); record._written = true; }
-    if (this.context && this.config.trace && !this.traceStopped) { try { await this.context.tracing.stop({ path: this.tracePath }); this.traceStopped = true; } catch (error) { this.warn('trace', error); } }
+    for (const record of this.network) if (!record._written && this.networkFile) { appendJsonl(this.networkFile, record); record._written = true; }
+    if (this.context && this.capturePolicy.trace && !this.traceStopped) { try { await this.context.tracing.stop({ path: this.tracePath }); this.traceStopped = true; } catch (error) { this.warn('trace', error); } }
     this.assignLinks();
     const endDate = new Date();
-    const referenced = ['evidence.json', 'actions.json', 'network.jsonl', 'console.jsonl'];
-    if (this.config.trace && fs.existsSync(this.tracePath)) referenced.push('trace.zip');
-    const evidence = { schemaVersion: '1.0', recorderVersion: '2.0.0', metadata: { flowName: path.basename(this.outDir), url: this.targetUrl || '(手动导航)', startTime: this.startDate.toISOString(), endTime: endDate.toISOString(), durationSeconds: Math.round((endDate - this.startDate) / 1000), browser: BROWSER_CHANNEL, platform: process.platform }, complete: !forceError && this.errors.length === 0, config: this.config, files: { evidence: 'evidence.json', actions: 'actions.json', network: 'network.jsonl', console: 'console.jsonl', pages: 'pages/', responses: 'responses/', downloads: 'downloads/', trace: fs.existsSync(this.tracePath) ? 'trace.zip' : null, archive: this.config.zip ? 'evidence.zip' : null }, missingFiles: [], warnings: this.warnings, errors: this.errors, states: this.states, steps: this.steps };
+    const files = {
+      evidence: 'evidence.json',
+      actions: 'actions.json',
+      network: this.capturePolicy.networkMetadata ? 'network.jsonl' : null,
+      console: this.capturePolicy.consoleErrors ? 'console.jsonl' : null,
+      pages: this.capturePolicy.screenshots || this.capturePolicy.dom ? 'pages/' : null,
+      responses: this.capturePolicy.responseBodies ? 'responses/' : null,
+      downloads: this.capturePolicy.downloads ? 'downloads/' : null,
+      trace: this.capturePolicy.trace ? 'trace.zip' : null,
+      archive: this.capturePolicy.archive ? 'evidence.zip' : null,
+    };
+    const referenced = ['actions.json'];
+    if (this.capturePolicy.networkMetadata) referenced.push('network.jsonl');
+    if (this.capturePolicy.consoleErrors) referenced.push('console.jsonl');
+    if (this.capturePolicy.trace) referenced.push('trace.zip');
+    const evidence = { schemaVersion: '1.0', recorderVersion: '2.0.0', metadata: { flowName: path.basename(this.outDir), url: this.targetUrl || '(手动导航)', startTime: this.startDate.toISOString(), endTime: endDate.toISOString(), durationSeconds: Math.round((endDate - this.startDate) / 1000), browser: BROWSER_CHANNEL, platform: process.platform }, complete: !forceError && this.errors.length === 0, config: this.config, capturePolicy: this.capturePolicy, captureSummary: createCaptureSummary(this.capturePolicy), files, missingFiles: [], warnings: this.warnings, errors: this.errors, states: this.states, steps: this.steps };
     try { atomicWrite(path.join(this.outDir, 'actions.json'), JSON.stringify({ metadata: evidence.metadata, actions: this.actions }, null, 2)); } catch (error) { evidence.complete = false; evidence.errors.push({ scope: 'actions_write', message: error.message }); }
     for (const file of referenced) if (file !== 'evidence.json' && !fs.existsSync(path.join(this.outDir, file))) evidence.missingFiles.push(file);
     if (evidence.missingFiles.length) evidence.complete = false;
     atomicWrite(path.join(this.outDir, 'evidence.json'), JSON.stringify(evidence, null, 2));
-    if (this.config.zip) this.createZip().catch(error => { this.warnings.push({ scope: 'zip', message: error.message }); try { atomicWrite(path.join(this.outDir, 'evidence.json'), JSON.stringify({ ...evidence, warnings: this.warnings }, null, 2)); } catch (_) {} });
+    if (this.capturePolicy.archive) this.createZip().catch(error => { this.warnings.push({ scope: 'zip', message: error.message }); try { atomicWrite(path.join(this.outDir, 'evidence.json'), JSON.stringify({ ...evidence, warnings: this.warnings }, null, 2)); } catch (_) {} });
   }
   createZip() {
     return new Promise((resolve, reject) => {
@@ -313,7 +343,7 @@ class RecordingSession {
     this.stopping = true; console.log(`正在结束录制: ${reason}`);
     for (const page of this.pages.keys()) await page.evaluate(() => window.__recorderFlushInputs && window.__recorderFlushInputs()).catch(() => {});
     await new Promise(resolve => setTimeout(resolve, 100));
-    if (this.context && this.config.trace && !this.traceStopped) { try { await this.context.tracing.stop({ path: this.tracePath }); this.traceStopped = true; } catch (error) { this.warn('trace', error); } }
+    if (this.context && this.capturePolicy.trace && !this.traceStopped) { try { await this.context.tracing.stop({ path: this.tracePath }); this.traceStopped = true; } catch (error) { this.warn('trace', error); } }
     try { if (this.browser) await this.browser.close(); } catch (error) { this.warn('browser_close', error); }
     await this.finalize(false);
   }
@@ -335,4 +365,6 @@ async function main() {
   }
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { RecordingSession, main };
